@@ -1,0 +1,120 @@
+<script type="text/javascript">
+    RED.nodes.registerType('aws-kms-config', {
+        category: 'config',
+        defaults: {
+            name: { value: "" },
+            useIAM: { value: false }
+        },
+        credentials: {
+            accessKey: { type: "text" },
+            secretKey: { type: "password" },
+            sessionToken: { type: "password" }
+        },
+        label: function() {
+            return this.name || "AWS KMS Config";
+        },
+        oneditprepare: function() {
+            // Initialize tooltips
+            $('.node-config-input').tooltip({
+                delay: { show: 500, hide: 100 },
+                trigger: 'hover'
+            });
+
+            // Handle IAM role toggle
+            $('#node-config-input-useIAM').change(function() {
+                if ($(this).is(':checked')) {
+                    $('.credentials-row').hide();
+                } else {
+                    $('.credentials-row').show();
+                }
+            });
+
+            // Validate access key format
+            $('#node-config-input-accessKey').on('change', function() {
+                const value = $(this).val();
+                if (value && !/^[A-Z0-9]{20}$/.test(value)) {
+                    $(this).addClass('input-error');
+                    $('#node-config-input-accessKey-error').show();
+                } else {
+                    $(this).removeClass('input-error');
+                    $('#node-config-input-accessKey-error').hide();
+                }
+            });
+        }
+    });
+</script>
+
+<script type="text/x-red" data-template-name="aws-kms-config">
+    <div class="form-row">
+        <label for="node-config-input-name">
+            <i class="fa fa-tag"></i> Name
+        </label>
+        <input type="text" id="node-config-input-name" placeholder="AWS KMS Configuration">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-useIAM">
+            <i class="fa fa-user"></i> Use IAM Role
+        </label>
+        <input type="checkbox" id="node-config-input-useIAM">
+        <div class="help-text">Use IAM role for authentication (recommended for EC2 instances)</div>
+    </div>
+    <div class="form-row credentials-row">
+        <label for="node-config-input-accessKey">
+            <i class="fa fa-key"></i> Access Key
+        </label>
+        <input type="text" id="node-config-input-accessKey" placeholder="AKIAXXXXXXXXXXXXXXXX">
+        <div id="node-config-input-accessKey-error" class="error-text" style="display:none;">
+            Invalid Access Key format. Should be 20 characters long and contain only uppercase letters and numbers.
+        </div>
+    </div>
+    <div class="form-row credentials-row">
+        <label for="node-config-input-secretKey">
+            <i class="fa fa-key"></i> Secret Key
+        </label>
+        <input type="password" id="node-config-input-secretKey" placeholder="Secret Access Key">
+    </div>
+    <div class="form-row credentials-row">
+        <label for="node-config-input-sessionToken">
+            <i class="fa fa-key"></i> Session Token
+        </label>
+        <input type="password" id="node-config-input-sessionToken" placeholder="Session Token (optional)">
+        <div class="help-text">Required only for temporary credentials</div>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="aws-kms-config">
+    <p>AWS KMS configuration node that stores AWS credentials.</p>
+    <p>You can either:</p>
+    <ul>
+        <li>Use IAM Role (recommended for EC2 instances)</li>
+        <li>Provide Access Key and Secret Key</li>
+        <li>Use temporary credentials with Session Token</li>
+    </ul>
+    <p><b>Security Note:</b> Credentials are stored securely in Node-RED's credentials store.</p>
+    <p><b>Best Practices:</b></p>
+    <ul>
+        <li>Use IAM roles when possible</li>
+        <li>Rotate access keys regularly</li>
+        <li>Use temporary credentials for enhanced security</li>
+        <li>Follow the principle of least privilege</li>
+    </ul>
+</script>
+
+<style>
+    .help-text {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 4px;
+    }
+    .error-text {
+        color: #d00;
+        font-size: 0.8em;
+        margin-top: 4px;
+    }
+    .input-error {
+        border-color: #d00 !important;
+    }
+    .credentials-row {
+        margin-top: 10px;
+    }
+</style> 

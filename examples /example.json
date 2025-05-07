@@ -1,0 +1,278 @@
+[
+    {
+        "id": "28a24a6108a02bc9",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "4f0fda472a0ca5f2",
+        "type": "aws-kms",
+        "z": "28a24a6108a02bc9",
+        "name": "Get Data Key",
+        "aws": "540d6dd2f4c4def0",
+        "region": "eu-central-1",
+        "operation": "generateDataKey",
+        "keyId": "",
+        "keySpec": "AES_256",
+        "x": 300,
+        "y": 120,
+        "wires": [
+            [
+                "2aca638668b421b6"
+            ]
+        ]
+    },
+    {
+        "id": "2aca638668b421b6",
+        "type": "debug",
+        "z": "28a24a6108a02bc9",
+        "name": "debug Data Key",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 500,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "564f079ac1346469",
+        "type": "inject",
+        "z": "28a24a6108a02bc9",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 120,
+        "y": 120,
+        "wires": [
+            [
+                "4f0fda472a0ca5f2"
+            ]
+        ]
+    },
+    {
+        "id": "c095929eae512fc9",
+        "type": "aws-kms",
+        "z": "28a24a6108a02bc9",
+        "name": "Decrypt Data",
+        "aws": "540d6dd2f4c4def0",
+        "region": "eu-central-1",
+        "operation": "decrypt",
+        "keyId": "",
+        "keySpec": "AES_256",
+        "x": 470,
+        "y": 360,
+        "wires": [
+            [
+                "a1b7a664949b4f8a"
+            ]
+        ]
+    },
+    {
+        "id": "a1b7a664949b4f8a",
+        "type": "debug",
+        "z": "28a24a6108a02bc9",
+        "name": "debug Decrypt Data",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 700,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "a488a55cac4fdb89",
+        "type": "inject",
+        "z": "28a24a6108a02bc9",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 120,
+        "y": 360,
+        "wires": [
+            [
+                "3b8c2a232fb113b9"
+            ]
+        ]
+    },
+    {
+        "id": "3b8c2a232fb113b9",
+        "type": "function",
+        "z": "28a24a6108a02bc9",
+        "name": "Prepare Data",
+        "func": "msg.payload = 'base64 string'; // String for Decrypt\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 290,
+        "y": 360,
+        "wires": [
+            [
+                "c095929eae512fc9"
+            ]
+        ]
+    },
+    {
+        "id": "b0be33be613c84e1",
+        "type": "aws-kms",
+        "z": "28a24a6108a02bc9",
+        "name": "Encrypt Data",
+        "aws": "540d6dd2f4c4def0",
+        "region": "eu-central-1",
+        "operation": "encrypt",
+        "keyId": "",
+        "keySpec": "AES_256",
+        "x": 470,
+        "y": 240,
+        "wires": [
+            [
+                "b22d0629c411e64e"
+            ]
+        ]
+    },
+    {
+        "id": "b22d0629c411e64e",
+        "type": "debug",
+        "z": "28a24a6108a02bc9",
+        "name": "debug Encrypt Data",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 700,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "a9b46abc9294687c",
+        "type": "inject",
+        "z": "28a24a6108a02bc9",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 120,
+        "y": 240,
+        "wires": [
+            [
+                "281d40acf658659c"
+            ]
+        ]
+    },
+    {
+        "id": "281d40acf658659c",
+        "type": "function",
+        "z": "28a24a6108a02bc9",
+        "name": "Prepare Data",
+        "func": "msg.payload = 'base64 string for Encrypt'; // String to Encrypt\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 290,
+        "y": 240,
+        "wires": [
+            [
+                "b0be33be613c84e1"
+            ]
+        ]
+    },
+    {
+        "id": "ef8b24cc11bbdec0",
+        "type": "comment",
+        "z": "28a24a6108a02bc9",
+        "name": "GET DATA KEY FROM AWS KMS",
+        "info": "",
+        "x": 170,
+        "y": 80,
+        "wires": []
+    },
+    {
+        "id": "d623e6f76d1fcbd8",
+        "type": "comment",
+        "z": "28a24a6108a02bc9",
+        "name": "ENCRYPT DATA BY AWS KMS",
+        "info": "",
+        "x": 170,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "b23f3ff7e40ad955",
+        "type": "comment",
+        "z": "28a24a6108a02bc9",
+        "name": "DECRYPT DATA BY AWS KMS",
+        "info": "",
+        "x": 170,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "540d6dd2f4c4def0",
+        "type": "aws-kms-config",
+        "name": "KEYS ENCRYPT",
+        "useIAM": true
+    }
+]

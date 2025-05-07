@@ -1,0 +1,184 @@
+<script type="text/javascript">
+    RED.nodes.registerType('aws-kms', {
+        category: 'AWS',
+        color: '#FF9900',
+        defaults: {
+            name: { value: "" },
+            aws: { value: "", type: "aws-kms-config", required: true },
+            region: { value: "us-east-1" },
+            operation: { value: "encrypt" },
+            keyId: { value: "" },
+            keySpec: { value: "AES_256" }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "aws.png",
+        label: function() {
+            return this.name || "AWS KMS";
+        },
+        labelStyle: function() {
+            return this.name ? "node_label_italic" : "";
+        },
+        oneditprepare: function() {
+            // Initialize tooltips
+            $('.node-input').tooltip({
+                delay: { show: 500, hide: 100 },
+                trigger: 'hover'
+            });
+
+            // Handle operation change
+            $("#node-input-operation").on("change", function() {
+                const operation = $(this).val();
+                
+                // Show/hide key spec for generateDataKey
+                if (operation === "generateDataKey") {
+                    $("#keySpecRow").show();
+                } else {
+                    $("#keySpecRow").hide();
+                }
+
+                // Show/hide key ID for decrypt
+                if (operation === "decrypt") {
+                    $("#keyIdRow").hide();
+                    $("#keyIdHelp").show();
+                } else {
+                    $("#keyIdRow").show();
+                    $("#keyIdHelp").hide();
+                }
+            });
+
+            // Validate region format
+            $('#node-input-region').on('change', function() {
+                const value = $(this).val();
+                if (value && !/^[a-z]{2}-[a-z]+-\d{1}$/.test(value)) {
+                    $(this).addClass('input-error');
+                    $('#region-error').show();
+                } else {
+                    $(this).removeClass('input-error');
+                    $('#region-error').hide();
+                }
+            });
+
+            // Validate key ID format
+            $('#node-input-keyId').on('change', function() {
+                const value = $(this).val();
+                const keyIdRegex = /^(arn:aws:kms:[a-z0-9-]+:\d{12}:(key\/([a-f0-9-]{36}|mrk-[a-f0-9]{32})|alias\/[A-Za-z0-9/_+=.@-]+)|[a-f0-9-]{36}|mrk-[a-f0-9]{32}|alias\/[A-Za-z0-9/_+=.@-]+)$/;
+                if (value && !keyIdRegex.test(value)) {
+                    $(this).addClass('input-error');
+                    $('#keyId-error').show();
+                } else {
+                    $(this).removeClass('input-error');
+                    $('#keyId-error').hide();
+                }
+            });
+        }
+    });
+</script>
+
+<script type="text/x-red" data-template-name="aws-kms">
+    <div class="form-row">
+        <label for="node-input-name">
+            <i class="fa fa-tag"></i> Name
+        </label>
+        <input type="text" id="node-input-name" placeholder="AWS KMS Operation">
+    </div>
+    <div class="form-row">
+        <label for="node-input-aws">
+            <i class="fa fa-key"></i> AWS Credentials
+        </label>
+        <input type="text" id="node-input-aws">
+        <div class="help-text">Select AWS credentials configuration node</div>
+    </div>
+    <div class="form-row">
+        <label for="node-input-region">
+            <i class="fa fa-globe"></i> Region
+        </label>
+        <input type="text" id="node-input-region" placeholder="us-east-1">
+        <div id="region-error" class="error-text" style="display:none;">
+            Invalid region format. Example: us-east-1
+        </div>
+    </div>
+    <div class="form-row">
+        <label for="node-input-operation">
+            <i class="fa fa-cog"></i> Operation
+        </label>
+        <select id="node-input-operation">
+            <option value="encrypt">Encrypt</option>
+            <option value="decrypt">Decrypt</option>
+            <option value="generateDataKey">Generate Data Key</option>
+        </select>
+    </div>
+    <div class="form-row" id="keyIdRow">
+        <label for="node-input-keyId">
+            <i class="fa fa-key"></i> Key ID
+        </label>
+        <input type="text" id="node-input-keyId" placeholder="arn:aws:kms:region:account:key/key-id">
+        <div id="keyId-error" class="error-text" style="display:none;">
+            Invalid Key ID format. Should be a valid KMS key ARN
+        </div>
+    </div>
+    <div id="keyIdHelp" class="help-text" style="display:none;">
+        Key ID is not required for decryption as it's included in the encrypted data
+    </div>
+    <div class="form-row" id="keySpecRow">
+        <label for="node-input-keySpec">
+            <i class="fa fa-key"></i> Key Spec
+        </label>
+        <select id="node-input-keySpec">
+            <option value="AES_256">AES-256</option>
+            <option value="AES_128">AES-128</option>
+        </select>
+        <div class="help-text">Select the key size for data key generation</div>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="aws-kms">
+    <p>Performs AWS KMS operations:</p>
+    <ul>
+        <li><b>Encrypt</b>: Encrypts data using the specified KMS key</li>
+        <li><b>Decrypt</b>: Decrypts data that was encrypted using KMS</li>
+        <li><b>Generate Data Key</b>: Generates a new data key for client-side encryption</li>
+    </ul>
+    <p><b>Input:</b></p>
+    <ul>
+        <li><code>msg.payload</code>: Data to encrypt/decrypt (string or buffer)</li>
+        <li><code>msg.keyId</code>: Optional KMS key ID (if not set in node config)</li>
+    </ul>
+    <p><b>Output:</b></p>
+    <ul>
+        <li>For Encrypt: <code>msg.payload</code> contains base64-encoded encrypted data</li>
+        <li>For Decrypt: <code>msg.payload</code> contains decrypted data</li>
+        <li>For Generate Data Key: <code>msg.payload</code> contains an object with:
+            <ul>
+                <li><code>plaintext</code>: Base64-encoded plaintext key</li>
+                <li><code>ciphertext</code>: Base64-encoded encrypted key</li>
+            </ul>
+        </li>
+    </ul>
+    <p><b>Best Practices:</b></p>
+    <ul>
+        <li>Use appropriate key sizes for your security requirements</li>
+        <li>Store encrypted data securely</li>
+        <li>Rotate keys regularly</li>
+        <li>Use data keys for large data encryption</li>
+    </ul>
+</script>
+
+<style>
+    .help-text {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 4px;
+    }
+    .error-text {
+        color: #d00;
+        font-size: 0.8em;
+        margin-top: 4px;
+    }
+    .input-error {
+        border-color: #d00 !important;
+    }
+    .form-row {
+        margin-bottom: 10px;
+    }
+</style> 
