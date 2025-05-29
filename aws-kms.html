@@ -1,167 +1,162 @@
 <script type="text/javascript">
-    RED.nodes.registerType('aws-kms', {
-        category: 'AWS',
-        color: '#FF9900',
+    RED.nodes.registerType("aws-kms", {
+        category: "AWS",
         defaults: {
             name: { value: "" },
-            aws: { value: "", type: "aws-kms-config", required: true },
-            region: { value: "us-east-1" },
-            operation: { value: "encrypt" },
+            awsConfig: { value: "", type: "aws-kms-config", required: true },
+            operation: { value: "encrypt", required: true },
             keyId: { value: "" },
-            keySpec: { value: "AES_256" }
+            keyIdType: { value: "str" }
         },
         inputs: 1,
         outputs: 1,
-        icon: "aws.png",
-        label: function() {
-            return this.name || "AWS KMS";
-        },
-        labelStyle: function() {
-            return this.name ? "node_label_italic" : "";
+        color: "#e49191",
+        icon: "font-awesome/fa-lock",
+        label: function () {
+            return this.name || "AWS KMS (" + this.operation + ")";
         },
         oneditprepare: function() {
-            // Initialize tooltips
-            $('.node-input').tooltip({
-                delay: { show: 500, hide: 100 },
-                trigger: 'hover'
+            // Initialize typedInput for Key ID
+            $("#node-input-keyId").typedInput({
+                default: 'str',
+                types: ['str', 'msg', 'flow', 'global', 'env'],
+                typeField: "#node-input-keyIdType"
             });
+            
+            // Set initial values
+            $("#node-input-keyId").typedInput('type', this.keyIdType || 'str');
+            $("#node-input-keyId").typedInput('value', this.keyId || '');
 
-            // Handle operation change
-            $("#node-input-operation").on("change", function() {
-                const operation = $(this).val();
-                
-                // Show/hide key spec for generateDataKey
-                if (operation === "generateDataKey") {
-                    $("#keySpecRow").show();
+            // Handle operation change to show/hide Key ID field
+            function updateKeyIdVisibility() {
+                var operation = $("#node-input-operation").val();
+                if (operation === 'decrypt') {
+                    $("#keyId-row").hide();
                 } else {
-                    $("#keySpecRow").hide();
+                    $("#keyId-row").show();
                 }
+            }
 
-                // Show/hide key ID for decrypt
-                if (operation === "decrypt") {
-                    $("#keyIdRow").hide();
-                    $("#keyIdHelp").show();
-                } else {
-                    $("#keyIdRow").show();
-                    $("#keyIdHelp").hide();
-                }
-            });
-
-            // Validate region format
-            $('#node-input-region').on('change', function() {
-                const value = $(this).val();
-                if (value && !/^[a-z]{2}-[a-z]+-\d{1}$/.test(value)) {
-                    $(this).addClass('input-error');
-                    $('#region-error').show();
-                } else {
-                    $(this).removeClass('input-error');
-                    $('#region-error').hide();
-                }
-            });
-
-            // Validate key ID format
-            $('#node-input-keyId').on('change', function() {
-                const value = $(this).val();
-                const keyIdRegex = /^(arn:aws:kms:[a-z0-9-]+:\d{12}:(key\/([a-f0-9-]{36}|mrk-[a-f0-9]{32})|alias\/[A-Za-z0-9/_+=.@-]+)|[a-f0-9-]{36}|mrk-[a-f0-9]{32}|alias\/[A-Za-z0-9/_+=.@-]+)$/;
-                if (value && !keyIdRegex.test(value)) {
-                    $(this).addClass('input-error');
-                    $('#keyId-error').show();
-                } else {
-                    $(this).removeClass('input-error');
-                    $('#keyId-error').hide();
-                }
-            });
+            $("#node-input-operation").on("change", updateKeyIdVisibility);
+            updateKeyIdVisibility();
+        },
+        oneditsave: function() {
+            // Save typedInput values
+            this.keyIdType = $("#node-input-keyIdType").val();
+            this.keyId = $("#node-input-keyId").typedInput('value');
         }
     });
 </script>
 
-<script type="text/x-red" data-template-name="aws-kms">
+<script type="text/html" data-template-name="aws-kms">
     <div class="form-row">
-        <label for="node-input-name">
-            <i class="fa fa-tag"></i> Name
-        </label>
-        <input type="text" id="node-input-name" placeholder="AWS KMS Operation">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Node name">
     </div>
     <div class="form-row">
-        <label for="node-input-aws">
-            <i class="fa fa-key"></i> AWS Credentials
-        </label>
-        <input type="text" id="node-input-aws">
-        <div class="help-text">Select AWS credentials configuration node</div>
+        <label for="node-input-awsConfig"><i class="fa fa-cog"></i> AWS Config</label>
+        <input type="text" id="node-input-awsConfig">
     </div>
     <div class="form-row">
-        <label for="node-input-region">
-            <i class="fa fa-globe"></i> Region
-        </label>
-        <input type="text" id="node-input-region" placeholder="us-east-1">
-        <div id="region-error" class="error-text" style="display:none;">
-            Invalid region format. Example: us-east-1
-        </div>
-    </div>
-    <div class="form-row">
-        <label for="node-input-operation">
-            <i class="fa fa-cog"></i> Operation
-        </label>
+        <label for="node-input-operation"><i class="fa fa-tasks"></i> Operation</label>
         <select id="node-input-operation">
             <option value="encrypt">Encrypt</option>
             <option value="decrypt">Decrypt</option>
             <option value="generateDataKey">Generate Data Key</option>
         </select>
     </div>
-    <div class="form-row" id="keyIdRow">
-        <label for="node-input-keyId">
-            <i class="fa fa-key"></i> Key ID
-        </label>
-        <input type="text" id="node-input-keyId" placeholder="arn:aws:kms:region:account:key/key-id">
-        <div id="keyId-error" class="error-text" style="display:none;">
-            Invalid Key ID format. Should be a valid KMS key ARN
-        </div>
-    </div>
-    <div id="keyIdHelp" class="help-text" style="display:none;">
-        Key ID is not required for decryption as it's included in the encrypted data
-    </div>
-    <div class="form-row" id="keySpecRow">
-        <label for="node-input-keySpec">
-            <i class="fa fa-key"></i> Key Spec
-        </label>
-        <select id="node-input-keySpec">
-            <option value="AES_256">AES-256</option>
-            <option value="AES_128">AES-128</option>
-        </select>
-        <div class="help-text">Select the key size for data key generation</div>
+    <div class="form-row" id="keyId-row">
+        <label for="node-input-keyId"><i class="fa fa-key"></i> Key ID</label>
+        <input type="text" id="node-input-keyId" style="width: 70%;">
+        <input type="hidden" id="node-input-keyIdType">
     </div>
 </script>
 
 <script type="text/x-red" data-help-name="aws-kms">
-    <p>Performs AWS KMS operations:</p>
+    <p>A Node-RED node for AWS KMS operations (encrypt, decrypt, generate data key).</p>
+    
+    <h3>Configuration</h3>
+    <p>Select or create an AWS KMS configuration that contains your AWS credentials and region settings.</p>
+    
+    <h3>Operations</h3>
     <ul>
-        <li><b>Encrypt</b>: Encrypts data using the specified KMS key</li>
-        <li><b>Decrypt</b>: Decrypts data that was encrypted using KMS</li>
-        <li><b>Generate Data Key</b>: Generates a new data key for client-side encryption</li>
+        <li><b>Encrypt</b>: Encrypt data using a KMS key</li>
+        <li><b>Decrypt</b>: Decrypt data (key ID is extracted from ciphertext)</li>
+        <li><b>Generate Data Key</b>: Generate a data encryption key</li>
     </ul>
-    <p><b>Input:</b></p>
+    
+    <h3>Key ID Input</h3>
+    <p>The Key ID field supports multiple input types:</p>
     <ul>
-        <li><code>msg.payload</code>: Data to encrypt/decrypt (string or buffer)</li>
-        <li><code>msg.keyId</code>: Optional KMS key ID (if not set in node config)</li>
+        <li><b>String</b>: Direct key ID or ARN</li>
+        <li><b>Message</b>: Retrieved from message property (e.g., <code>payload.keyId</code>)</li>
+        <li><b>Flow Context</b>: Retrieved from flow context</li>
+        <li><b>Global Context</b>: Retrieved from global context</li>
+        <li><b>Environment Variable</b>: Retrieved from environment variable</li>
     </ul>
-    <p><b>Output:</b></p>
-    <ul>
-        <li>For Encrypt: <code>msg.payload</code> contains base64-encoded encrypted data</li>
-        <li>For Decrypt: <code>msg.payload</code> contains decrypted data</li>
-        <li>For Generate Data Key: <code>msg.payload</code> contains an object with:
-            <ul>
-                <li><code>plaintext</code>: Base64-encoded plaintext key</li>
-                <li><code>ciphertext</code>: Base64-encoded encrypted key</li>
-            </ul>
-        </li>
-    </ul>
-    <p><b>Best Practices:</b></p>
-    <ul>
-        <li>Use appropriate key sizes for your security requirements</li>
-        <li>Store encrypted data securely</li>
-        <li>Rotate keys regularly</li>
-        <li>Use data keys for large data encryption</li>
-    </ul>
+    
+    <h3>Input</h3>
+    
+    <h4>Encrypt</h4>
+    <p>Provide data to encrypt in <code>msg.payload</code> or <code>msg.payload.plaintext</code>:</p>
+    <pre>{
+  "plaintext": "Hello, World!"
+}</pre>
+    
+    <h4>Decrypt</h4>
+    <p>Provide base64-encoded ciphertext in <code>msg.payload</code> or <code>msg.payload.ciphertext</code>:</p>
+    <pre>{
+  "ciphertext": "AQICAHh..."
+}</pre>
+    
+    <h4>Generate Data Key</h4>
+    <p>Optionally specify key specification in <code>msg.payload.keySpec</code> (default: AES_256):</p>
+    <pre>{
+  "keySpec": "AES_256"
+}</pre>
+    
+    <h3>Output</h3>
+    
+    <h4>Encrypt</h4>
+    <pre>{
+  "ciphertext": "AQICAHh...",
+  "keyId": "arn:aws:kms:..."
+}</pre>
+    
+    <h4>Decrypt</h4>
+    <pre>{
+  "plaintext": "Hello, World!"
+}</pre>
+    
+    <h4>Generate Data Key</h4>
+    <pre>{
+  "plaintextKey": "base64-encoded-plaintext-key",
+  "encryptedKey": "base64-encoded-encrypted-key",
+  "keyId": "arn:aws:kms:..."
+}</pre>
+    
+    <h3>Error Handling</h3>
+    <p>If an error occurs, the output will contain an error object:</p>
+    <pre>{
+  "error": "Error message"
+}</pre>
+    
+    <h3>Examples</h3>
+    
+    <h4>Basic Encryption Flow</h4>
+    <ol>
+        <li>Set operation to "Encrypt"</li>
+        <li>Configure Key ID (string or from context)</li>
+        <li>Send message with plaintext data</li>
+        <li>Receive encrypted ciphertext</li>
+    </ol>
+    
+    <h4>Decryption Flow</h4>
+    <ol>
+        <li>Set operation to "Decrypt"</li>
+        <li>Send message with ciphertext (Key ID not needed)</li>
+        <li>Receive decrypted plaintext</li>
+    </ol>
 </script>
 
 <style>

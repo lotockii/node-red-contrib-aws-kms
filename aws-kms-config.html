@@ -3,43 +3,193 @@
         category: 'config',
         defaults: {
             name: { value: "" },
-            useIAM: { value: false }
+            region: { value: "eu-central-1", required: true },
+            useIAMRole: { value: false, required: true },
+            accessKeyId: { value: "" },
+            accessKeyIdType: { value: "str" },
+            accessKeyIdContext: { value: "" },
+            secretAccessKey: { value: "" },
+            secretAccessKeyType: { value: "str" },
+            secretAccessKeyContext: { value: "" }
         },
         credentials: {
-            accessKey: { type: "text" },
-            secretKey: { type: "password" },
-            sessionToken: { type: "password" }
+            accessKeyId: { type: "text" },
+            secretAccessKey: { type: "password" }
         },
         label: function() {
-            return this.name || "AWS KMS Config";
+            return this.name || "AWS KMS Config (" + this.region + ")";
         },
+        icon: "font-awesome/fa-lock",
+        color: "#e49191",
         oneditprepare: function() {
+            // Set initial IAM role checkbox state
+            var useIAMRole = this.useIAMRole === true || this.useIAMRole === "true" || this.useIAMRole === 1;
+            $("#node-config-input-useIAMRole").prop('checked', useIAMRole);
+
             // Initialize tooltips
             $('.node-config-input').tooltip({
                 delay: { show: 500, hide: 100 },
                 trigger: 'hover'
             });
 
-            // Handle IAM role toggle
-            $('#node-config-input-useIAM').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.credentials-row').hide();
+            // Use only flow, global, str, env for typedInput
+            var stdTypes = ['str', 'flow', 'global', 'env'];
+            
+            // Initialize typedInput for Access Key ID
+            $("#node-config-input-accessKeyId-typed").typedInput({
+                default: 'str',
+                types: stdTypes,
+                typeField: "#node-config-input-accessKeyIdType"
+            });
+            $("#node-config-input-accessKeyId-typed").typedInput('type', this.accessKeyIdType || 'str');
+            
+            // Set value based on type for Access Key ID
+            if (this.accessKeyIdType === 'str') {
+                // For string type, use credentials if available
+                var credValue = this.credentials && this.credentials.accessKeyId ? this.credentials.accessKeyId : '';
+                $("#node-config-input-accessKeyId-typed").typedInput('value', credValue);
+            } else {
+                // For context types, use the stored context value
+                $("#node-config-input-accessKeyId-typed").typedInput('value', this.accessKeyIdContext || '');
+            }
+
+            // Secret Access Key type selection (PostgreSQL-like logic)
+            if (this.secretAccessKeyType && this.secretAccessKeyType !== 'str') {
+                // Context type
+                $("#node-config-input-secretAccessKey-type").val(this.secretAccessKeyType);
+                $("#node-config-input-secretAccessKey-context").val(this.secretAccessKeyContext || '');
+            } else {
+                // String type
+                $("#node-config-input-secretAccessKey-type").val('str');
+            }
+
+            // Secret Access Key field visibility logic
+            var updateSecretAccessKeyFieldVisibility = function() {
+                var secretAccessKeyType = $("#node-config-input-secretAccessKey-type").val();
+                
+                if (secretAccessKeyType === 'str') {
+                    $("#secretAccessKey-str-row").show();
+                    $("#secretAccessKey-context-row").hide();
                 } else {
-                    $('.credentials-row').show();
+                    $("#secretAccessKey-str-row").hide();
+                    $("#secretAccessKey-context-row").show();
+                }
+            };
+
+            $("#node-config-input-secretAccessKey-type").on("change", updateSecretAccessKeyFieldVisibility);
+            
+            // Call immediately to set initial state
+            updateSecretAccessKeyFieldVisibility();
+
+            // Also call after a short delay to ensure DOM is ready
+            setTimeout(updateSecretAccessKeyFieldVisibility, 100);
+
+            // Sync visible password field with hidden credentials field
+            $("#node-config-input-secretAccessKey-visible").on("input", function() {
+                $("#node-config-input-secretAccessKey").val($(this).val());
+            });
+
+            // Handle placeholder behavior for Secret Access Key
+            $("#node-config-input-secretAccessKey-visible").on("focus", function() {
+                if ($(this).attr('placeholder') === '••••••••••••••••••••••••••••••••••••••••') {
+                    $(this).attr('placeholder', 'Enter new secret key or leave empty to keep existing');
                 }
             });
 
-            // Validate access key format
-            $('#node-config-input-accessKey').on('change', function() {
-                const value = $(this).val();
-                if (value && !/^[A-Z0-9]{20}$/.test(value)) {
-                    $(this).addClass('input-error');
-                    $('#node-config-input-accessKey-error').show();
+            $("#node-config-input-secretAccessKey-visible").on("blur", function() {
+                var inputVal = $(this).val();
+                if (!inputVal && this.credentials && this.credentials.has_secretAccessKey) {
+                    $(this).attr('placeholder', '••••••••••••••••••••••••••••••••••••••••');
+                }
+            }.bind(this));
+
+            // Load existing secret access key if available
+            if (this.credentials && this.credentials.secretAccessKey) {
+                $("#node-config-input-secretAccessKey-visible").val(this.credentials.secretAccessKey);
+                $("#node-config-input-secretAccessKey").val(this.credentials.secretAccessKey);
+            } else if (this.credentials && this.credentials.has_secretAccessKey) {
+                // Secret key exists but not shown for security - show placeholder
+                $("#node-config-input-secretAccessKey-visible").attr('placeholder', '••••••••••••••••••••••••••••••••••••••••');
+                $("#node-config-input-secretAccessKey-visible").val('');
+            } else {
+                // No secret key - set default placeholder
+                $("#node-config-input-secretAccessKey-visible").attr('placeholder', 'Enter secret access key');
+                $("#node-config-input-secretAccessKey-visible").val('');
+            }
+
+            // Handle IAM role toggle
+            $('#node-config-input-useIAMRole').change(function() {
+                var isIAMRole = $(this).is(':checked');
+                
+                if (isIAMRole) {
+                    $('.credentials-row').hide();
                 } else {
-                    $(this).removeClass('input-error');
-                    $('#node-config-input-accessKey-error').hide();
+                    $('.credentials-row').show();
+                    // Re-apply field visibility logic
+                    updateSecretAccessKeyFieldVisibility();
                 }
             });
+
+            // Set initial visibility
+            if (useIAMRole) {
+                $('.credentials-row').hide();
+            } else {
+                // Ensure proper field visibility
+                setTimeout(function() {
+                    updateSecretAccessKeyFieldVisibility();
+                }, 200);
+            }
+        },
+        oneditsave: function() {
+            // Save basic configuration
+            this.name = $("#node-config-input-name").val();
+            this.region = $("#node-config-input-region").val();
+            this.useIAMRole = $("#node-config-input-useIAMRole").is(':checked');
+
+            // Handle Access Key ID (TypedInput logic)
+            var accessKeyIdType = $("#node-config-input-accessKeyIdType").val();
+            var accessKeyIdValue = $("#node-config-input-accessKeyId-typed").typedInput('value');
+            
+            // Explicitly set the type first
+            this.accessKeyIdType = accessKeyIdType;
+            
+            if (accessKeyIdType === 'str') {
+                // String type - save to credentials, clear from defaults
+                this.accessKeyId = '';
+                this.accessKeyIdContext = '';
+                $("#node-config-input-accessKeyId-context").val('');
+                // Set the credential field
+                $("#node-config-input-accessKeyId").val(accessKeyIdValue || '');
+            } else {
+                // Context type - save to context field, clear credentials
+                this.accessKeyId = '';
+                this.accessKeyIdContext = accessKeyIdValue || '';
+                $("#node-config-input-accessKeyId").val('');
+                $("#node-config-input-accessKeyId-context").val(accessKeyIdValue || '');
+            }
+
+            // Handle Secret Access Key based on type (PostgreSQL-like logic)
+            var secretAccessKeyType = $("#node-config-input-secretAccessKey-type").val();
+            this.secretAccessKeyType = secretAccessKeyType;
+            
+            if (secretAccessKeyType === 'str') {
+                // String secret key - save to credentials, clear context
+                this.secretAccessKeyContext = '';
+                this.secretAccessKey = '';  // Clear from defaults
+                $("#node-config-input-secretAccessKey-context").val('');
+                // Sync visible field to hidden credentials field only if not empty
+                var visibleSecretAccessKey = $("#node-config-input-secretAccessKey-visible").val();
+                if (visibleSecretAccessKey) {
+                    $("#node-config-input-secretAccessKey").val(visibleSecretAccessKey);
+                }
+                // If empty, keep existing secret key (don't overwrite)
+            } else {
+                // Context secret key - save context reference
+                var secretAccessKeyValue = $("#node-config-input-secretAccessKey-context").val();
+                this.secretAccessKeyContext = secretAccessKeyValue || '';
+                this.secretAccessKey = '';  // Clear from defaults
+                $("#node-config-input-secretAccessKey-context").val(secretAccessKeyValue || '');
+            }
         }
     });
 </script>
@@ -49,62 +199,158 @@
         <label for="node-config-input-name">
             <i class="fa fa-tag"></i> Name
         </label>
-        <input type="text" id="node-config-input-name" placeholder="AWS KMS Configuration">
+        <input type="text" id="node-config-input-name" placeholder="Configuration Name" style="width: 70%;">
     </div>
     <div class="form-row">
-        <label for="node-config-input-useIAM">
+        <label for="node-config-input-region">
+            <i class="fa fa-globe"></i> Region
+        </label>
+        <select id="node-config-input-region" style="width: 70%;">
+            <option value="us-east-1">US East (N. Virginia)</option>
+            <option value="us-east-2">US East (Ohio)</option>
+            <option value="us-west-1">US West (N. California)</option>
+            <option value="us-west-2">US West (Oregon)</option>
+            <option value="af-south-1">Africa (Cape Town)</option>
+            <option value="ap-east-1">Asia Pacific (Hong Kong)</option>
+            <option value="ap-south-1">Asia Pacific (Mumbai)</option>
+            <option value="ap-south-2">Asia Pacific (Hyderabad)</option>
+            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+            <option value="ap-southeast-2">Asia Pacific (Sydney)</option>
+            <option value="ap-southeast-3">Asia Pacific (Jakarta)</option>
+            <option value="ap-southeast-4">Asia Pacific (Melbourne)</option>
+            <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+            <option value="ap-northeast-2">Asia Pacific (Seoul)</option>
+            <option value="ap-northeast-3">Asia Pacific (Osaka)</option>
+            <option value="ca-central-1">Canada (Central)</option>
+            <option value="eu-central-1" selected>EU (Frankfurt)</option>
+            <option value="eu-central-2">EU (Zurich)</option>
+            <option value="eu-west-1">EU (Ireland)</option>
+            <option value="eu-west-2">EU (London)</option>
+            <option value="eu-west-3">EU (Paris)</option>
+            <option value="eu-north-1">EU (Stockholm)</option>
+            <option value="eu-south-1">EU (Milan)</option>
+            <option value="eu-south-2">EU (Spain)</option>
+            <option value="il-central-1">Israel (Tel Aviv)</option>
+            <option value="me-south-1">Middle East (Bahrain)</option>
+            <option value="me-central-1">Middle East (UAE)</option>
+            <option value="sa-east-1">South America (São Paulo)</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-useIAMRole">
             <i class="fa fa-user"></i> Use IAM Role
         </label>
-        <input type="checkbox" id="node-config-input-useIAM">
-        <div class="help-text">Use IAM role for authentication (recommended for EC2 instances)</div>
+        <input type="checkbox" id="node-config-input-useIAMRole" style="display: inline-block; width: auto; vertical-align: middle;">
+        <span style="margin-left: 5px; vertical-align: middle;">Use IAM role for authentication<br><small>(recommended for EC2 instances)</small></span>
     </div>
     <div class="form-row credentials-row">
-        <label for="node-config-input-accessKey">
-            <i class="fa fa-key"></i> Access Key
+        <label for="node-config-input-accessKeyId-typed">
+            <i class="fa fa-key"></i> Access Key ID
         </label>
-        <input type="text" id="node-config-input-accessKey" placeholder="AKIAXXXXXXXXXXXXXXXX">
-        <div id="node-config-input-accessKey-error" class="error-text" style="display:none;">
-            Invalid Access Key format. Should be 20 characters long and contain only uppercase letters and numbers.
-        </div>
+        <input type="text" id="node-config-input-accessKeyId-typed" style="width: 70%;">
+        <input type="hidden" id="node-config-input-accessKeyIdType">
     </div>
     <div class="form-row credentials-row">
-        <label for="node-config-input-secretKey">
-            <i class="fa fa-key"></i> Secret Key
+        <label for="node-config-input-secretAccessKey-type">
+            <i class="fa fa-key"></i> Secret Access Key Type
         </label>
-        <input type="password" id="node-config-input-secretKey" placeholder="Secret Access Key">
+        <select id="node-config-input-secretAccessKey-type" style="width: 70%;">
+            <option value="str">Direct Secret Key (secure)</option>
+            <option value="flow">Flow Context</option>
+            <option value="global">Global Context</option>
+            <option value="env">Environment Variable</option>
+        </select>
     </div>
-    <div class="form-row credentials-row">
-        <label for="node-config-input-sessionToken">
-            <i class="fa fa-key"></i> Session Token
+    <div class="form-row credentials-row" id="secretAccessKey-str-row">
+        <label for="node-config-input-secretAccessKey-visible">
+            <i class="fa fa-key"></i> Secret Access Key
         </label>
-        <input type="password" id="node-config-input-sessionToken" placeholder="Session Token (optional)">
-        <div class="help-text">Required only for temporary credentials</div>
+        <input type="password" id="node-config-input-secretAccessKey-visible" style="width: 70%;">
     </div>
+    <div class="form-row credentials-row" id="secretAccessKey-context-row" style="display: none;">
+        <label for="node-config-input-secretAccessKey-context">
+            <i class="fa fa-code"></i> Variable Name
+        </label>
+        <input type="text" id="node-config-input-secretAccessKey-context" style="width: 70%;">
+    </div>
+    <!-- Hidden fields for Node-RED credentials system -->
+    <input type="text" id="node-config-input-accessKeyId" style="display: none;">
+    <input type="password" id="node-config-input-secretAccessKey" style="display: none;">
+    <!-- Hidden field for accessKeyId context value -->
+    <input type="text" id="node-config-input-accessKeyId-context" style="display: none;">
+    <!-- Hidden field for secretAccessKeyContext -->
+    <input type="text" id="node-config-input-secretAccessKey-context" style="display: none;">
 </script>
 
 <script type="text/x-red" data-help-name="aws-kms-config">
-    <p>AWS KMS configuration node that stores AWS credentials.</p>
-    <p>You can either:</p>
+    <p>AWS KMS configuration node with flexible context support:</p>
+    
+    <h3>Authentication Methods</h3>
     <ul>
-        <li>Use IAM Role (recommended for EC2 instances)</li>
-        <li>Provide Access Key and Secret Key</li>
-        <li>Use temporary credentials with Session Token</li>
+        <li><b>IAM Role</b>: Use IAM role for authentication (recommended for EC2 instances)</li>
+        <li><b>Access Keys</b>: Use AWS access key and secret key</li>
     </ul>
-    <p><b>Security Note:</b> Credentials are stored securely in Node-RED's credentials store.</p>
-    <p><b>Best Practices:</b></p>
+    
+    <h3>Credential Sources</h3>
+    <p>When not using IAM role, credentials support multiple input types:</p>
     <ul>
-        <li>Use IAM roles when possible</li>
+        <li><b>String</b>: Stored securely in Node-RED credentials (encrypted)</li>
+        <li><b>Flow Context</b>: Retrieved from flow context variables</li>
+        <li><b>Global Context</b>: Retrieved from global context variables</li>
+        <li><b>Environment Variable</b>: Retrieved from environment variables</li>
+    </ul>
+    
+    <h3>Security Notes</h3>
+    <ul>
+        <li>String credentials are stored encrypted in Node-RED's credentials store</li>
+        <li>Context types only store variable names, actual credentials retrieved at runtime</li>
+        <li>Use IAM roles when possible for better security</li>
         <li>Rotate access keys regularly</li>
-        <li>Use temporary credentials for enhanced security</li>
         <li>Follow the principle of least privilege</li>
+    </ul>
+    
+    <h3>Examples</h3>
+    <p><b>Environment-based configuration:</b></p>
+    <ul>
+        <li>Access Key ID: Environment Variable → <code>AWS_ACCESS_KEY_ID</code></li>
+        <li>Secret Access Key: Environment Variable → <code>AWS_SECRET_ACCESS_KEY</code></li>
+    </ul>
+    
+    <p><b>Mixed configuration:</b></p>
+    <ul>
+        <li>Access Key ID: String → stored securely</li>
+        <li>Secret Access Key: Global Context → <code>aws_secret</code></li>
     </ul>
 </script>
 
 <style>
+    .form-row {
+        margin-bottom: 10px;
+    }
+    .form-row label {
+        display: inline-block;
+        width: 120px;
+        vertical-align: top;
+        margin-top: 6px;
+    }
+    .form-row input[type="text"],
+    .form-row input[type="password"],
+    .form-row select {
+        width: 70%;
+    }
+    .form-row input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+        vertical-align: middle;
+    }
+    .credentials-row {
+        margin-top: 10px;
+    }
     .help-text {
         font-size: 0.8em;
         color: #666;
         margin-top: 4px;
+        margin-left: 125px;
     }
     .error-text {
         color: #d00;
@@ -113,8 +359,5 @@
     }
     .input-error {
         border-color: #d00 !important;
-    }
-    .credentials-row {
-        margin-top: 10px;
     }
 </style> 

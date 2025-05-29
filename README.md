@@ -38,8 +38,8 @@ This node provides the following AWS KMS operations:
    - Generates a new data key for client-side encryption
    - No input required
    - Output: Object in `msg.payload` containing:
-     - `plaintext`: Base64-encoded plaintext key
-     - `ciphertext`: Base64-encoded encrypted key
+      - `plaintext`: Base64-encoded plaintext key
+      - `ciphertext`: Base64-encoded encrypted key
 
 ## Configuration
 

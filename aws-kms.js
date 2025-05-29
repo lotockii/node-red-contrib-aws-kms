@@ -1,277 +1,246 @@
 /**
- * AWS KMS Node-RED Node
+ * AWS KMS Node for Node-RED
  * 
- * This module provides AWS KMS encryption, decryption, and key generation capabilities
- * for Node-RED flows. It supports both IAM roles and access key authentication.
+ * This module provides AWS KMS operations (encrypt, decrypt, generateDataKey) for Node-RED.
+ * It supports flexible credential handling through the aws-kms-config node.
  * 
  * @module node-red-contrib-aws-kms
  */
 
-module.exports = function(RED) {
-    const { KMSClient, EncryptCommand, DecryptCommand, GenerateDataKeyCommand } = require("@aws-sdk/client-kms");
+const {
+    EncryptCommand,
+    DecryptCommand,
+    GenerateDataKeyCommand
+} = require("@aws-sdk/client-kms");
 
+module.exports = function(RED) {
     /**
      * AWS KMS Node constructor
      * 
      * @param {Object} config - Node configuration
-     * @param {string} config.operation - Operation type: 'encrypt', 'decrypt', or 'generateDataKey'
-     * @param {string} config.keyId - KMS key ID (optional for decrypt operation)
-     * @param {string} config.region - AWS region
-     * @param {string} config.keySpec - Key specification for generateDataKey (default: 'AES_256')
+     * @param {string} config.name - Node name
+     * @param {string} config.awsConfig - AWS configuration node ID
+     * @param {string} config.operation - KMS operation to perform
+     * @param {string} config.keyId - KMS key ID
+     * @param {string} config.keyIdType - Type of key ID input
      */
     function AWSKMSNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
+        const kmsConfig = RED.nodes.getNode(config.awsConfig);
 
-        // Initialize AWS credentials
-        const awsConfig = initializeAWSCredentials(node, config);
-        if (!awsConfig) return;
+        if (!kmsConfig) {
+            node.error("AWS KMS configuration not found.");
+            return;
+        }
 
-        // Initialize KMS client
-        const kmsClient = initializeKMSClient(node, awsConfig, config);
-        if (!kmsClient) return;
+        // Store configuration
+        this.operation = config.operation;
+        this.keyId = config.keyId;
+        this.keyIdType = config.keyIdType;
 
-        // Set initial node status
-        updateNodeStatus(node, config);
+        /**
+         * Get value from different input types
+         * @param {string} value - Value to get
+         * @param {string} type - Type of value (str, msg, flow, global, env)
+         * @param {Object} msg - Message object
+         * @returns {string} Retrieved value
+         */
+        function getValue(value, type, msg) {
+            if (!value) return null;
+
+            try {
+                let result;
+                switch (type) {
+                    case 'msg':
+                        result = RED.util.getMessageProperty(msg, value);
+                        break;
+                    case 'flow':
+                        result = node.context().flow.get(value);
+                        break;
+                    case 'global':
+                        result = node.context().global.get(value);
+                        break;
+                    case 'env':
+                        result = process.env[value];
+                        break;
+                    default:
+                        result = value;
+                }
+                return result;
+            } catch (err) {
+                throw new Error(`Failed to get value for type: ${type}, value: ${value}. Error: ${err.message}`);
+            }
+        }
+
+        /**
+         * Check if data is base64 encoded
+         * @param {string} str - String to check
+         * @returns {boolean} Whether the string is base64 encoded
+         */
+        function isBase64(str) {
+            if (!str || typeof str !== 'string') return false;
+            try {
+                return Buffer.from(str, 'base64').toString('base64') === str;
+            } catch (err) {
+                return false;
+            }
+        }
+
+        /**
+         * Perform KMS encrypt operation
+         * @param {Object} client - KMS client
+         * @param {string} keyId - KMS key ID
+         * @param {string|Buffer} plaintext - Data to encrypt
+         * @returns {Promise<string>} Base64 encoded encrypted data
+         */
+        async function performEncrypt(client, keyId, plaintext) {
+            let plaintextBuffer;
+            
+            if (Buffer.isBuffer(plaintext)) {
+                plaintextBuffer = plaintext;
+            } else if (typeof plaintext === 'string') {
+                plaintextBuffer = Buffer.from(plaintext, 'utf8');
+            } else {
+                throw new Error("Plaintext must be a string or Buffer");
+            }
+
+            const command = new EncryptCommand({
+                KeyId: keyId,
+                Plaintext: plaintextBuffer
+            });
+
+            const response = await client.send(command);
+            return Buffer.from(response.CiphertextBlob).toString('base64');
+        }
+
+        /**
+         * Perform KMS decrypt operation
+         * @param {Object} client - KMS client
+         * @param {string} ciphertext - Base64 encoded encrypted data
+         * @returns {Promise<string>} Decrypted plaintext
+         */
+        async function performDecrypt(client, ciphertext) {
+            let ciphertextBuffer;
+            
+            if (typeof ciphertext === 'string') {
+                if (isBase64(ciphertext)) {
+                    ciphertextBuffer = Buffer.from(ciphertext, 'base64');
+                } else {
+                    throw new Error("Ciphertext string must be base64 encoded");
+                }
+            } else if (Buffer.isBuffer(ciphertext)) {
+                ciphertextBuffer = ciphertext;
+            } else {
+                throw new Error("Ciphertext must be a base64 string or Buffer");
+            }
+
+            const command = new DecryptCommand({
+                CiphertextBlob: ciphertextBuffer
+            });
+
+            const response = await client.send(command);
+            return Buffer.from(response.Plaintext).toString('utf8');
+        }
+
+        /**
+         * Perform KMS generate data key operation
+         * @param {Object} client - KMS client
+         * @param {string} keyId - KMS key ID
+         * @param {string} keySpec - Key specification
+         * @returns {Promise<Object>} Generated data key information
+         */
+        async function performGenerateDataKey(client, keyId, keySpec = 'AES_256') {
+            const command = new GenerateDataKeyCommand({
+                KeyId: keyId,
+                KeySpec: keySpec
+            });
+
+            const response = await client.send(command);
+            
+            return {
+                plaintextKey: Buffer.from(response.Plaintext).toString('base64'),
+                encryptedKey: Buffer.from(response.CiphertextBlob).toString('base64'),
+                keyId: response.KeyId
+            };
+        }
 
         // Handle incoming messages
-        node.on('input', async function(msg) {
+        node.on('input', async (msg, send, done) => {
             try {
-                await processMessage(node, kmsClient, config, msg);
-            } catch (error) {
-                handleError(node, error);
-            }
-        });
-
-        // Cleanup on node removal
-        node.on('close', function() {
-            if (kmsClient) {
-                kmsClient.destroy();
-            }
-            node.status({});
-        });
-    }
-
-    /**
-     * Initialize AWS credentials from config node
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {Object} config - Node configuration
-     * @returns {Object|null} AWS configuration object or null if initialization failed
-     */
-    function initializeAWSCredentials(node, config) {
-        const awsConfig = RED.nodes.getNode(config.aws);
-        if (!awsConfig) {
-            node.error("AWS credentials not configured");
-            node.status({fill:"red",shape:"ring",text:"No credentials"});
-            return null;
-        }
-        return awsConfig;
-    }
-
-    /**
-     * Initialize KMS client with proper configuration
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {Object} awsConfig - AWS configuration
-     * @param {Object} config - Node configuration
-     * @returns {KMSClient|null} KMS client instance or null if initialization failed
-     */
-    function initializeKMSClient(node, awsConfig, config) {
-        try {
-            const clientConfig = {
-                region: config.region || 'us-east-1'
-            };
-
-            if (!awsConfig.useIAM) {
-                if (!awsConfig.accessKeyId || !awsConfig.secretAccessKey) {
-                    throw new Error("Access Key and Secret Key are required when not using IAM");
+                // Get client with message context for credential resolution
+                const client = kmsConfig.getClient(msg, node);
+                
+                if (!client) {
+                    throw new Error("Failed to initialize KMS client");
                 }
-                clientConfig.credentials = {
-                    accessKeyId: awsConfig.accessKeyId,
-                    secretAccessKey: awsConfig.secretAccessKey
-                };
+
+                // Get Key ID
+                const keyId = getValue(node.keyId, node.keyIdType, msg);
+                if (!keyId && (node.operation === 'encrypt' || node.operation === 'generateDataKey')) {
+                    throw new Error("Key ID is required for encrypt and generateDataKey operations");
+                }
+
+                let result;
+
+                switch (node.operation) {
+                    case 'encrypt':
+                        const plaintext = msg.payload.plaintext || msg.payload;
+                        if (!plaintext) {
+                            throw new Error("No plaintext data provided for encryption");
+                        }
+                        
+                        result = await performEncrypt(client, keyId, plaintext);
+                        msg.payload = {
+                            ciphertext: result,
+                            keyId: keyId
+                        };
+                        break;
+
+                    case 'decrypt':
+                        const ciphertext = msg.payload.ciphertext || msg.payload;
+                        if (!ciphertext) {
+                            throw new Error("No ciphertext data provided for decryption");
+                        }
+                        
+                        result = await performDecrypt(client, ciphertext);
+                        msg.payload = {
+                            plaintext: result
+                        };
+                        break;
+
+                    case 'generateDataKey':
+                        const keySpec = msg.payload.keySpec || 'AES_256';
+                        
+                        result = await performGenerateDataKey(client, keyId, keySpec);
+                        msg.payload = result;
+                        break;
+
+                    default:
+                        throw new Error(`Unsupported operation: ${node.operation}`);
+                }
+
+                // Update node status
+                node.status({ fill: "green", shape: "dot", text: `${node.operation} completed` });
+                
+                send(msg);
+                done();
+
+            } catch (err) {
+                node.error(err.message, msg);
+                node.status({ fill: "red", shape: "ring", text: err.message });
+                
+                // Send error in payload
+                msg.payload = { error: err.message };
+                send(msg);
+                done();
             }
-
-            return new KMSClient(clientConfig);
-        } catch (error) {
-            node.error("AWS KMS Client Error: " + error.message);
-            node.status({fill:"red",shape:"ring",text:"Client initialization failed"});
-            return null;
-        }
-    }
-
-    /**
-     * Update node status based on configuration
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {Object} config - Node configuration
-     */
-    function updateNodeStatus(node, config) {
-        if (config.operation !== 'decrypt' && !config.keyId) {
-            node.status({fill:"yellow",shape:"ring",text:"Key ID needed in msg.keyId"});
-        } else {
-            node.status({});
-        }
-    }
-
-    /**
-     * Process incoming message based on operation type
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {KMSClient} kmsClient - KMS client instance
-     * @param {Object} config - Node configuration
-     * @param {Object} msg - Message object
-     */
-    async function processMessage(node, kmsClient, config, msg) {
-        const keyId = config.keyId || msg.keyId;
-        node.status({fill:"blue",shape:"dot",text:"Processing..."});
-
-        switch (config.operation) {
-            case 'encrypt':
-                await handleEncrypt(node, kmsClient, keyId, msg);
-                break;
-            case 'decrypt':
-                await handleDecrypt(node, kmsClient, msg);
-                break;
-            case 'generateDataKey':
-                await handleGenerateDataKey(node, kmsClient, keyId, config, msg);
-                break;
-            default:
-                throw new Error(`Unknown operation: ${config.operation}`);
-        }
-
-        updateNodeStatus(node, config);
-        node.send(msg);
-    }
-
-    /**
-     * Handle encryption operation
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {KMSClient} kmsClient - KMS client instance
-     * @param {string} keyId - KMS key ID
-     * @param {Object} msg - Message object
-     */
-    async function handleEncrypt(node, kmsClient, keyId, msg) {
-        if (!msg.payload) {
-            throw new Error("No data to encrypt");
-        }
-        if (!keyId) {
-            throw new Error("Key ID required for encryption. Set it in node config or provide in msg.keyId");
-        }
-
-        const plaintext = preparePlaintext(msg.payload);
-        const command = new EncryptCommand({
-            KeyId: keyId,
-            Plaintext: plaintext
         });
 
-        const result = await kmsClient.send(command);
-        msg.payload = Buffer.from(result.CiphertextBlob).toString('base64');
+        // Clear status on deploy
+        node.status({});
     }
 
-    /**
-     * Handle decryption operation
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {KMSClient} kmsClient - KMS client instance
-     * @param {Object} msg - Message object
-     */
-    async function handleDecrypt(node, kmsClient, msg) {
-        if (!msg.payload) {
-            throw new Error("No data to decrypt");
-        }
-
-        const ciphertext = extractCiphertext(msg.payload);
-        const command = new DecryptCommand({
-            CiphertextBlob: Buffer.from(ciphertext, 'base64')
-        });
-
-        const result = await kmsClient.send(command);
-        msg.payload = Buffer.from(result.Plaintext).toString('base64');
-    }
-
-    /**
-     * Handle data key generation
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {KMSClient} kmsClient - KMS client instance
-     * @param {string} keyId - KMS key ID
-     * @param {Object} config - Node configuration
-     * @param {Object} msg - Message object
-     */
-    async function handleGenerateDataKey(node, kmsClient, keyId, config, msg) {
-        if (!keyId) {
-            throw new Error("Key ID required for generating data key. Set it in node config or provide in msg.keyId");
-        }
-
-        const command = new GenerateDataKeyCommand({
-            KeyId: keyId,
-            KeySpec: config.keySpec || 'AES_256'
-        });
-
-        const result = await kmsClient.send(command);
-        msg.payload = {
-            plaintext: Buffer.from(result.Plaintext).toString('base64'),
-            ciphertext: Buffer.from(result.CiphertextBlob).toString('base64')
-        };
-    }
-
-    /**
-     * Prepare plaintext for encryption
-     * 
-     * @param {string|Buffer} payload - Input payload
-     * @returns {Buffer} Prepared plaintext buffer
-     */
-    function preparePlaintext(payload) {
-        if (typeof payload === 'string' && isBase64(payload)) {
-            return Buffer.from(payload, 'base64');
-        }
-        return Buffer.isBuffer(payload) ? payload : Buffer.from(payload, 'utf8');
-    }
-
-    /**
-     * Extract ciphertext from payload
-     * 
-     * @param {string|Object} payload - Input payload
-     * @returns {string} Extracted ciphertext
-     */
-    function extractCiphertext(payload) {
-        if (typeof payload === 'object' && payload.ciphertext) {
-            return payload.ciphertext;
-        }
-        if (typeof payload !== 'string') {
-            throw new Error("Payload must be a base64 string or object with .ciphertext");
-        }
-        return payload;
-    }
-
-    /**
-     * Check if a string is base64 encoded
-     * 
-     * @param {string} str - String to check
-     * @returns {boolean} True if string is base64 encoded
-     */
-    function isBase64(str) {
-        try {
-            return btoa(atob(str)) === str;
-        } catch (err) {
-            return false;
-        }
-    }
-
-    /**
-     * Handle node errors
-     * 
-     * @param {Object} node - Node-RED node instance
-     * @param {Error} error - Error object
-     */
-    function handleError(node, error) {
-        node.error("AWS KMS Error: " + error.message);
-        node.status({fill:"red",shape:"dot",text:error.message});
-    }
-
-    // Register node type
+    // Register the node
     RED.nodes.registerType("aws-kms", AWSKMSNode);
-} 
+}; 

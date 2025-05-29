@@ -1,14 +1,18 @@
 {
   "name": "node-red-contrib-aws-kms",
-  "version": "1.0.0",
-  "description": "Module for AWS KMS (Key Management Service) integration with Node-RED",
+  "version": "2.0.0",
+  "description": "Node-RED node for AWS KMS operations with flexible credential handling",
   "keywords": [
     "node-red",
     "aws",
     "kms",
     "encryption",
     "decryption",
-    "security"
+    "key-management",
+    "security",
+    "context",
+    "credentials",
+    "iam"
   ],
   "homepage": "https://github.com/lotockii/node-red-contrib-aws-kms#readme",
   "bugs": {
@@ -16,9 +20,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lotockii/node-red-contrib-aws-kms.git"
+    "url": "https://github.com/andriilototskyi/node-red-contrib-aws-kms.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "author": "Andrii Lototskyi <dn050992lan@gmail.com>",
   "type": "commonjs",
   "main": "aws-kms.js",
@@ -26,10 +30,10 @@
     "example": "examples"
   },
   "scripts": {
-    "test": "echo \"No test specified\" && exit 0"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.470.0"
+    "@aws-sdk/client-kms": "^3.799.0"
   },
   "devDependencies": {},
   "engines": {
