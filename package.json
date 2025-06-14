@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-aws-kms",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Node-RED node for AWS KMS operations with flexible credential handling",
   "keywords": [
     "node-red",

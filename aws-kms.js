@@ -118,7 +118,7 @@ module.exports = function(RED) {
          * Perform KMS decrypt operation
          * @param {Object} client - KMS client
          * @param {string} ciphertext - Base64 encoded encrypted data
-         * @returns {Promise<string>} Decrypted plaintext
+         * @returns {Promise<string>} Decrypted plaintext in base64
          */
         async function performDecrypt(client, ciphertext) {
             let ciphertextBuffer;
@@ -140,7 +140,7 @@ module.exports = function(RED) {
             });
 
             const response = await client.send(command);
-            return Buffer.from(response.Plaintext).toString('utf8');
+            return Buffer.from(response.Plaintext).toString('base64');
         }
 
         /**
